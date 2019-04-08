@@ -79,11 +79,21 @@ class View(object):
 
     def get_commands_sch(self, directory, index):
         # little bit gross.... ;)
+        print self.name
         sheet = re.search("sheet-(\d+)", self.name).group(1)
         assert(sheet)
         commands = [
-            "set palette black",
+            "set palette white",
             "edit .s%d" % int(sheet),
+            "; export image %s %i" % (self.get_path(directory, index), self.dpi)
+        ]
+        return commands
+
+    def get_commands_sch2(self, directory, index):
+        # little bit gross.... ;)
+        commands = [
+            "set palette white",
+            "edit %s" % self.name,
             "; export image %s %i" % (self.get_path(directory, index), self.dpi)
         ]
         return commands
@@ -162,6 +172,32 @@ def run(file1, file2, temp_dir, out_dir, dpi, eagle):
     available_layers_1 = set(l.get("name").lower() for l in root1.find("drawing").find("layers").iter("layer"))
     available_layers_2 = set(l.get("name").lower() for l in root2.find("drawing").find("layers").iter("layer"))
     available_layers = available_layers_1.intersection(available_layers_2)
+    
+    makeImages(file1,out_dir,dpi,1)
+    makeImages(file2,out_dir,dpi,2)
+    exit()
+    
+    modules2 = []
+    for module in root2.findall(".//module"):
+        #print module
+        modules2.append(module.get("name"))
+    sheetnames=[]
+    cmds=[]
+    for sheet_parent in root1.findall(".//sheets/.."):
+        print sheet_parent
+        if sheet_parent.tag=="module":
+            name = sheet_parent.get("name")
+            print View("%s.mod" % name, dpi=dpi, diff=1, diff_bg=None).get_commands_sch2(temp_dir, 1)
+        else:
+            sheetnames.append("sheet-xx")
+        #print sheet_parent.findall("sheets")
+        #modules2.append(module.get("name"))
+    print sheetnames
+    
+    #print modules1
+    #print modules2
+    exit()
+    
     sheet_count1 = len(root1.findall(".//sheets/"))
     sheet_count2 = len(root2.findall(".//sheets/"))
     sheet_count = min(sheet_count1, sheet_count2) # you're gonna have a bad day if these don't match...
@@ -239,6 +275,29 @@ def run(file1, file2, temp_dir, out_dir, dpi, eagle):
         if view.diff and view.diff_bg:
             shutil.move(view.get_path(temp_dir, "diff_bg"), view.get_path(out_dir, "diff_bg"))
 
+def makeImages(filename,out_dir,dpi,idx):
+    tree = ET.parse(filename)
+    root = tree.getroot()
+    nested = []
+    for module in root.findall(".//module"):
+        #print module
+        name = module.get("name")
+        i=0
+        for sheet in module.findall(".//sheet"):
+            i=i+1
+            nested.append(View("%s.m%d" % (name,i), dpi=dpi, diff=1, diff_bg=None).get_commands_sch2(out_dir, idx))
+    
+    
+    flat = [cmd for cmds in nested for cmd in cmds] 
+    
+    print flat
+    try:
+        subprocess.call(["eagle", "-C", ";".join(flat + ["quit"]), filename])
+    except OSError, e:
+        print>>sys.stderr, "failed to run eagle:", str(e)
+        print>>sys.stderr
+        print>>sys.stderr, "try specifying the path to eagle with --eagle=..."
+        sys.exit(1)
 
 def diff(image1, image2, background=None):
     image1_gray = ImageOps.grayscale(image1)
